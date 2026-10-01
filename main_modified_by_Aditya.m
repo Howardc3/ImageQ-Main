@@ -44,16 +44,34 @@ function main_modified_by_Aditya(openDir, animal_name)
     defaultRectPos = [round((imgW-cropSize(1))/2), round((imgH-cropSize(2))/2), cropSize];
     rectPos = defaultRectPos;
 
+
     fig = figure('Name','Interactive Crop Adjuster','NumberTitle','off', ...
         'Units','normalized','WindowState', 'maximized');
     
+    % Default uicontrol font: normalized, i.e. a fraction of each control's
+    % height, so text scales with the window. fitUicontrolText (called at
+    % the end of setup) shrinks any text too wide for its control. Pass a
+    % smaller normalized 'FontSize' to cap one control's size, or
+    % 'FontUnits','points' before 'FontSize' to opt it out of fitting.
+    set(fig, 'DefaultUicontrolFontUnits', 'normalized', ...
+        'DefaultUicontrolFontSize', 0.6);
+    
+    % uicontrol(fig,'Style','pushbutton','String','Convert to Gray','Units','normalized', ...
+    % 'Position',[0.025 0.8 0.08 0.05], ...   % slightly bigger
+    % 'FontWeight','bold', ...
+    % 'FontSize',12, ...
+    % 'ForegroundColor',[0 0 0], ...          % black text
+    % 'BackgroundColor',[0.7 0.7 0.7], ...      
+    % 'Callback',@(src,evt) convertToGray());
+
     uicontrol(fig,'Style','pushbutton','String','Convert to Gray','Units','normalized', ...
-    'Position',[0.025 0.8 0.08 0.05], ...   % slightly bigger
-    'FontWeight','bold', ...
-    'FontSize',12, ...
-    'ForegroundColor',[0 0 0], ...          % black text
-    'BackgroundColor',[0.7 0.7 0.7], ...      
-    'Callback',@(src,evt) convertToGray());
+        'Position',[0.025 0.8 0.08 0.05], ...   % slightly bigger
+        'FontWeight','bold', ...
+        'ForegroundColor',[0 0 0], ...          % black text
+        'BackgroundColor',[0.7 0.7 0.7], ...      
+        'Callback',@(src,evt) convertToGray());
+
+    
 
 
     %% Add shape selection buttons
@@ -112,13 +130,12 @@ function setShape(shape)
 end
 
 uicontrol(fig, 'Style', 'text', 'String', 'Distance (px):', ...
-    'Units', 'normalized', 'Position', [0.46, 0.76, 0.05, 0.025], ...
-    'FontSize', 10);
+    'Units', 'normalized', 'Position', [0.46, 0.76, 0.05, 0.025]);
 
 rulerDistanceBox = uicontrol(fig, 'Style', 'edit', ...
     'String', '', 'Enable', 'inactive', ...
     'Units', 'normalized', 'Position', [0.46, 0.72, 0.041, 0.025], ...
-    'FontSize', 10, 'BackgroundColor', [1 1 1]);
+    'BackgroundColor', [1 1 1]);
 
 uicontrol(fig, 'Style', 'pushbutton', 'String', 'Ruler', ...
     'Units', 'normalized', 'Position', [0.46, 0.84, 0.041, 0.025], ...
@@ -169,7 +186,7 @@ uicontrol(fig, 'Style', 'pushbutton', 'String', 'Clear Ruler', ...
         uicontrol(fig, 'Style', 'text', 'String', [labels{i} ' Contrast'], 'Units','normalized', ...
             'Position', [baseX, 0.21, 0.25, 0.02]);
         val_labels(i,1) = uicontrol(fig, 'Style', 'text', 'String', '1.00', 'Units','normalized', ...
-            'Position', [baseX+0.25, 0.2, 0.05, 0.025]);
+            'Position', [baseX+0.25, 0.18, 0.05, 0.025]);
 
         sliders(i,2) = uicontrol(fig, 'Style', 'slider', 'Min', -0.5, 'Max', 0.5, 'Value', initVals(i,2), ...
             'SliderStep', [0.01 0.1], 'Units','normalized', 'Position', [baseX, 0.13, 0.25, 0.025], 'Callback', @(src,~) updateImage());
@@ -200,11 +217,11 @@ uicontrol(fig, 'Style', 'pushbutton', 'String', 'Clear Ruler', ...
     %% Save and Reset buttons
     uicontrol(fig, 'Style', 'pushbutton', 'String', 'Reset', ...
         'Units','normalized', 'Position', [0.85, 0.93, 0.12, 0.05], ...
-        'FontSize', 12, 'BackgroundColor', [1 0.9 0.9], 'Callback', @(src,~) resetAll());
+        'BackgroundColor', [1 0.9 0.9], 'Callback', @(src,~) resetAll());
 
     uicontrol(fig, 'Style', 'pushbutton', 'String', 'Save All', ...
         'Units','normalized', 'Position', [0.85, 0.87, 0.12, 0.05], ...
-        'FontSize', 12, 'BackgroundColor', [0.8 1 0.8], 'Callback', @(src,~) saveAll());
+        'BackgroundColor', [0.8 1 0.8], 'Callback', @(src,~) saveAll());
 
     uicontrol(fig, 'Style', 'pushbutton', 'String', 'Clear', ...
         'Units','normalized', 'Position', [0.93, 0.78, 0.05, 0.025], ...
@@ -234,7 +251,6 @@ uicontrol(fig, 'Style', 'pushbutton', 'String', 'Clear Ruler', ...
     %% Add Import parameters button
     uicontrol(fig, 'Style', 'pushbutton', 'String', 'Import parameters', ...
         'Units','normalized', 'Position', [0.85, 0.81, 0.12, 0.05], ...
-        'FontSize', 12, ...
         'BackgroundColor', [0.9 0.9 1], ...
         'Callback', @importParametersCallback);
 
@@ -1081,12 +1097,12 @@ function setMode(mode)
     allFields = fieldnames(modeButtons);
     for i = 1:length(allFields)
         btn = modeButtons.(allFields{i});
-        set(btn, 'FontWeight', 'normal', 'FontSize', 10);  % reset normal
+        set(btn, 'FontWeight', 'normal');  % reset normal
     end
 
     % Highlight selected one
     activeBtn = modeButtons.(mode);
-    set(activeBtn, 'FontWeight', 'bold', 'FontSize', 12);  % bigger + bold
+    set(activeBtn, 'FontWeight', 'bold');  % bold (fitUicontrolText refits the size)
 
     % Optional: Change background color darker too
     switch mode
@@ -1230,7 +1246,8 @@ function clearAllLabels()
 end
 
 function startRulerMode()
-    rulerPoints = [];  % 清空上一次
+    % rulerPoints = [];  % 清空上一次
+    clearRuler();
     title(axCropped, 'Click two points to measure distance', 'Color', 'b');
     set(hCroppedRGB, 'ButtonDownFcn', @rulerClick);
 end
@@ -1239,30 +1256,73 @@ function rulerClick(~,~)
     pt = get(axCropped, 'CurrentPoint');
     pt = pt(1, 1:2);  % [x, y]
     rulerPoints(end+1, :) = pt;
-
-    if size(rulerPoints, 1) == 2
+    % if size(rulerPoints, 1) == 2
         % 画线
-        if isgraphics(rulerLine), delete(rulerLine); end
-        rulerLine = line(axCropped, rulerPoints(:,1), rulerPoints(:,2), ...
-            'Color', 'yellow', 'LineWidth', 2);
+        % Draw line that follows mouse
+        % if isgraphics(rulerLine), delete(rulerLine); end
+        % rulerLine = line(axCropped, rulerPoints(:,1), rulerPoints(:,2), ...
+        %     'Color', 'yellow', 'LineWidth', 2);
+        % 
+        % % 计算距离
+        % d = sqrt(sum(diff(rulerPoints).^2));
+        % 
+        % % 显示在 GUI 框中
+        % rulerDistanceBox.String = sprintf('%.2f', d);
+        % 
+        % % 恢复点击逻辑
+        % set(hCroppedRGB, 'ButtonDownFcn', @labelClick);
+        % title(axCropped, 'Adjusted RGB Crop');
+    if size(rulerPoints, 1) == 1
+        % First click: start a line that follows the mouse
+        rulerLine = line(axCropped, [pt(1) pt(1)], [pt(2) pt(2)], ...
+            'Color', 'yellow', 'LineWidth', 2, 'PickableParts', 'none');
 
-        % 计算距离
-        d = sqrt(sum(diff(rulerPoints).^2));
-
-        % 显示在 GUI 框中
+        % WindowButtonMotionFcn is a property that holds a callback.
+        % Whenever the mouse moves, rulerMove is called
+        set(fig, 'WindowButtonMotionFcn', @rulerMove);
+    else
+        % Second click: lock the line in place
+        set(fig, 'WindowButtonMotionFcn', '');
+        set(rulerLine, 'XData', rulerPoints(:,1), 'YData', rulerPoints(:,2));
+        d = hypot(diff(rulerPoints(:,1)), diff(rulerPoints(:,2)));
         rulerDistanceBox.String = sprintf('%.2f', d);
 
-        % 恢复点击逻辑
         set(hCroppedRGB, 'ButtonDownFcn', @labelClick);
         title(axCropped, 'Adjusted RGB Crop');
     end
 end
 
+% Callback function used by a figure to show the ruler line
+    function rulerMove(~,~)
+        % Runs every time the mouse moves between the two clicks
+        if ~isgraphics(rulerLine), return; end
+        cp = get(axCropped, 'CurrentPoint');
+        p2 = cp(1, 1:2);
+
+        % Keep the end of the line inside the image, so the axes never zooms out
+        [h, w, ~] = size(hCroppedRGB.CData);
+        p2(1) = min(max(p2(1), 0.5), w + 0.5);
+        p2(2) = min(max(p2(2), 0.5), h + 0.5);
+
+        set(rulerLine, 'XData', [rulerPoints(1,1) p2(1)], ...
+            'YData', [rulerPoints(1,2) p2(2)]);
+        d = hypot(p2(1) - rulerPoints(1,1), p2(2) - rulerPoints(1,2));
+        rulerDistanceBox.String = sprintf('%.2f', d);
+    end
+
+
 function clearRuler()
+    % if isgraphics(rulerLine), delete(rulerLine); end
+    % rulerLine = [];
+    % rulerPoints = [];
+    % rulerDistanceBox.String = '';
+    set(fig, 'WindowButtonMotionFcn', '');   % stop following the mouse
     if isgraphics(rulerLine), delete(rulerLine); end
     rulerLine = [];
     rulerPoints = [];
     rulerDistanceBox.String = '';
+    set(hCroppedRGB, 'ButtonDownFcn', @labelClick);
+    title(axCropped, 'Adjusted RGB Crop');
 end
 
     function convertToGray()
@@ -1275,6 +1335,9 @@ end
         greyscale_case(gray_img, animal_name);
     end
 
+
+    % Shrink any control text that is too wide; refits on resize
+    fitUicontrolText(fig);
 
     createROI();
     updateImage();

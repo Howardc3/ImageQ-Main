@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__matlab__matlab_editor_read",
+      "mcp__matlab__evaluate_matlab_code"
+    ]
+  }
+}

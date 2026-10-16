@@ -12,31 +12,40 @@ function fitUicontrolText(parent)
 %
 %   Call this once, after all uicontrols have been created.
 
-    fig = ancestor(parent, 'figure');
+
     controls = findobj(parent, 'Type', 'uicontrol', '-not', 'Style', 'slider');
     controls = controls(strcmp(get(controls, 'FontUnits'), 'normalized'));
 
     for k = 1:numel(controls)
         h = controls(k);
         maxSize = h.FontSize;
+        % can't be bigger than 1 bro
         if maxSize > 1
             maxSize = 0.6;  % a leftover point size; fall back to the default
         end
         setappdata(h, 'fitMaxFontSize', maxSize);
+
+        % Like in Java except MATLAB always passes in the src and event and
+        % we already have the control, h
         addlistener(h, 'String', 'PostSet', @(~,~) fitOne(h));
         addlistener(h, 'FontWeight', 'PostSet', @(~,~) fitOne(h));
         fitOne(h);
     end
 
+    % if the size of the entire window changed, all ui elements should also
+    % change
+    fig = ancestor(parent, 'figure');
     fig.SizeChangedFcn = @(~,~) fitAll(controls);
 end
 
+% Callback for changing all elements
 function fitAll(controls)
     for k = 1:numel(controls)
         fitOne(controls(k));
     end
 end
 
+% Change the size of the font/text width in a control
 function fitOne(h)
     if ~isgraphics(h)
         return;
@@ -52,6 +61,7 @@ function fitOne(h)
     end
 end
 
+% Declare function so it returns text width
 function w = measureTextWidth(h)
     if strcmp(h.Style, 'popupmenu')
         % A popupmenu's Extent only covers the selected item, so measure
@@ -71,6 +81,7 @@ function w = measureTextWidth(h)
         w = h.Extent(3);
     end
 end
+
 
 function f = usableWidthFraction(style)
     % Leave room for button bevels, the popupmenu arrow, checkbox squares

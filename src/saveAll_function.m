@@ -1,3 +1,6 @@
+
+
+
 function saveAll_function(animal_name, currentShape, roi, original_rgb, imgW, imgH, hCroppedRGB, ...
     sliders, rAreaBox, gAreaBox, bAreaBox, maxrAreaBox, maxgAreaBox, maxbAreaBox, ...
     coord_boxes, rPositions, gPositions, bPositions, rgPositions, gbPositions, ...
@@ -105,6 +108,17 @@ function saveAll_function(animal_name, currentShape, roi, original_rgb, imgW, im
     adjusted = hCroppedRGB.CData;
     rgb_out = uint8(adjusted * 255);
     imwrite(rgb_out, fullfile(folderPath, strcat(animal_name,32,'adjusted_RGB.tif')));
+
+    % Also save the Adjusted RGB axes as shown on screen (scale bar, labels,
+    % traces, current zoom). The TIFs above stay raw pixels for measurement.
+    scaleBarFile = fullfile(folderPath, strcat(animal_name,32,'adjusted_RGB_scalebar.png'));
+    try
+        exportgraphics(hCroppedRGB.Parent, scaleBarFile, 'Resolution', 300);
+    catch
+        % Fallback for older MATLAB: use getframe
+        fr = getframe(hCroppedRGB.Parent);
+        imwrite(fr.cdata, scaleBarFile);
+    end
     rColor = cat(3, adjusted(:,:,1), zeros(size(adjusted,1), size(adjusted,2), 2));
     gColor = cat(3, zeros(size(adjusted,1), size(adjusted,2)), adjusted(:,:,2), zeros(size(adjusted,1), size(adjusted,2)));
     bColor = cat(3, zeros(size(adjusted,1), size(adjusted,2), 2), adjusted(:,:,3));

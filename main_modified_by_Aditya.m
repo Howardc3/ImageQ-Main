@@ -10,8 +10,8 @@ function main_modified_by_Aditya(openDir, animal_name)
     modeButtons = struct();  % 🛠 now officially exists
     currentShape ='rectangle'; % Add shape state variable
     roi = []; % ROI object
-    rulerLine = [];
-    rulerPoints = [];
+    rulerTool = []; % src/ruler.m handles, created once axCropped exists
+    scaleBarTool = []; % src/scaleBar.m handles, created once axCropped exists
 
     % Handle missing animal_name argument
     if nargin < 2 || isempty(animal_name)
@@ -20,7 +20,7 @@ function main_modified_by_Aditya(openDir, animal_name)
 
     % Optional directory to start in kk
     if nargin < 1 || ~isfolder(openDir)
-        [file, path] = uigetfile({'*.tif;*.png;*.jpg'}, 'Select Or iginal Image');
+        [file, path] = uigetfile({'*.tif;*.png;*.jpg'}, 'Select Original Image');
     else
         [file, path] = uigetfile({'*.tif;*.png;*.jpg'}, 'Select Original Image', openDir);
     end
@@ -35,14 +35,17 @@ function main_modified_by_Aditya(openDir, animal_name)
         original_rgb = im2double(original_img);
     end
 
-    answer = inputdlg({'Crop Width (pixels):','Crop Height (pixels):'}, ...
+    width_height_answer = inputdlg({'Crop Width (pixels):','Crop Height (pixels):'}, ...
                       'Crop Window Size', [1 40], {'1061','1061'});
-    if isempty(answer), return; end
-    cropSize = [str2double(answer{1}), str2double(answer{2})];
+    if isempty(width_height_answer), return; end
+    cropSize = [str2double(width_height_answer{1}), str2double(width_height_answer{2})];
 
     [imgH, imgW, ~] = size(original_rgb);
     defaultRectPos = [round((imgW-cropSize(1))/2), round((imgH-cropSize(2))/2), cropSize];
     rectPos = defaultRectPos;
+
+    % Pixels per micrometer; NaN = unknown (GUI stays in pixels, no scale bar)
+    conversion_factor = conversionFactorUIGenerator();
 
 
     fig = figure('Name','Interactive Crop Adjuster','NumberTitle','off', ...
@@ -65,17 +68,27 @@ function main_modified_by_Aditya(openDir, animal_name)
     % 'Callback',@(src,evt) convertToGray());
 
     uicontrol(fig,'Style','pushbutton','String','Convert to Gray','Units','normalized', ...
-        'Position',[0.025 0.8 0.08 0.05], ...   % slightly bigger
+        'Position',[0.34 0.55 0.08 0.04], ...   % beside ROI Shape, clear of axOriginal
         'FontWeight','bold', ...
         'ForegroundColor',[0 0 0], ...          % black text
         'BackgroundColor',[0.7 0.7 0.7], ...      
         'Callback',@(src,evt) convertToGray());
 
-    
+
+    %% Scale bar next to the main image
+    % Short text so fitUicontrolText doesn't shrink it much in this narrow
+    % column; sits directly on top of the box below (box top = 0.895).
+    % char(181) is the micro sign
+    uicontrol(fig, 'Style', 'text', 'String', ['Scale (' char(181) 'm):'], ...
+        'Units', 'normalized', 'Position', [0.46, 0.895, 0.04, 0.025]);
+    % Bar length in um; editing it redraws the bar (callback set by scaleBar)
+    scaleBarBox = uicontrol(fig, 'Style', 'edit', 'String', '1', ...
+        'Units', 'normalized', 'Position', [0.46, 0.87, 0.04, 0.025], ...
+        'BackgroundColor', [1 1 1]);
 
 
     %% Add shape selection buttons
-    shapePanel = uipanel(fig, 'Title', 'ROI Shape', 'Position', [0.175 0.55 0.15 0.04]);
+    shapePanel = uipanel(fig, 'Title', 'ROI Shape', 'Position', [0.175 0.565 0.15 0.035]);
     rectButton = uicontrol(shapePanel, 'Style', 'pushbutton', 'String', 'Rectangle', ...
         'Units','normalized', 'Position', [0 0 0.5 1], ...
         'FontWeight', 'bold', 'Callback', @(~,~) setShape('rectangle'));
@@ -83,26 +96,61 @@ function main_modified_by_Aditya(openDir, animal_name)
         'Units','normalized', 'Position', [0.5 0 0.5 1], ...
         'FontWeight', 'normal', 'Callback', @(~,~) setShape('polygon'));
 
+    
+    % UI for creating rectangle via entering coordinates
+    % Sits right under ROI Shape (above the Red title strip at ~0.53);
+    % setShape shows it only while the ROI shape is 'rectangle'
+    coordPanel = uipanel(fig, 'Title', 'Rectangle Coordinates', 'Position', [0.175 0.53 0.15 0.035]);
+    x1Edit = uicontrol(coordPanel, 'Style', 'edit', 'String', '0', ...
+        'Units','normalized', 'Position', [0 0 0.25 1], ...
+        'Callback', @(~,~) updateRectangle());
+    y1Edit = uicontrol(coordPanel, 'Style', 'edit', 'String', '0', ...
+        'Units','normalized', 'Position', [0.25 0 0.25 1], ...
+        'Callback', @(~,~) updateRectangle());
+    x2Edit = uicontrol(coordPanel, 'Style', 'edit', 'String', '100', ...
+        'Units','normalized', 'Position', [0.5 0 0.25 1], ...
+        'Callback', @(~,~) updateRectangle());
+    y2Edit = uicontrol(coordPanel, 'Style', 'edit', 'String', '100', ...
+        'Units','normalized', 'Position', [0.75 0 0.25 1], ...
+        'Callback', @(~,~) updateRectangle());
 
 
 %% Create ROI function
 function createROI()
     if ~isempty(roi) && isvalid(roi)
         delete(roi);
+        % If that was a polygon still being drawn, its draw() is waiting on
+        % the figure; deleting the ROI alone doesn't end the wait, so
+        % release it (does nothing if nothing is waiting)
+        uiresume(fig);
     end
-    
+
     switch currentShape
         case 'rectangle'
             roi = drawrectangle(axOriginal, 'Position', rectPos, 'Color', 'r', 'InteractionsAllowed', 'all');
         case 'polygon'
             % Prompt user to click on image to place polygon vertices
             title(axOriginal, 'Click on the image to place the polygon vertices', 'Color', 'r');
-            
-            % Use drawpolygon to let user freely draw polygon
-            roi = drawpolygon(axOriginal, 'Color', 'r', 'InteractionsAllowed', 'all', 'DrawingArea', 'unlimited');
-            
+
+            % Let user freely draw polygon. Create the ROI and store it in
+            % roi BEFORE draw() (which blocks until the polygon is done).
+            % This fixes the bug where if the user selected polygon, then
+            % rectangle, they could still draw the polygon. Now, selecting
+            % polygon then rectangle will delete the polygon and stop drawing,
+            % because roi is deleted before draw() is called.
+            % (drawpolygon only returns the handle after drawing finishes.)
+            poly = images.roi.Polygon(axOriginal, 'Color', 'r', 'InteractionsAllowed', 'all', 'DrawingArea', 'unlimited');
+            roi = poly;
+            draw(poly);
+
             % Remove prompt
-            title(axOriginal, '');
+            title(axOriginal, 'Original Image', 'Color', 'k');
+
+            % Cancelled: another shape was picked while drawing, and that
+            % call already made the new ROI and its listener
+            if ~isvalid(poly)
+                return;
+            end
     end
     addlistener(roi, 'ROIMoved', @(src, evt) moveROIAction());
 end
@@ -117,12 +165,15 @@ function setShape(shape)
     currentShape = shape;
     
     % Update button style: selected is bold, unselected is normal
+    % Coordinate entry only applies to rectangles, so hide it otherwise
     if strcmp(shape, 'rectangle')
         set(rectButton, 'FontWeight', 'bold');
         set(polyButton, 'FontWeight', 'normal');
+        set(coordPanel, 'Visible', 'on');
     else
         set(rectButton, 'FontWeight', 'normal');
         set(polyButton, 'FontWeight', 'bold');
+        set(coordPanel, 'Visible', 'off');
     end
     
     createROI();
@@ -130,26 +181,26 @@ function setShape(shape)
 end
 
 uicontrol(fig, 'Style', 'text', 'String', 'Distance (px):', ...
-    'Units', 'normalized', 'Position', [0.46, 0.76, 0.05, 0.025]);
+    'Units', 'normalized', 'Position', [0.46, 0.74, 0.04, 0.025]);
 
 rulerDistanceBox = uicontrol(fig, 'Style', 'edit', ...
     'String', '', 'Enable', 'inactive', ...
-    'Units', 'normalized', 'Position', [0.46, 0.72, 0.041, 0.025], ...
+    'Units', 'normalized', 'Position', [0.46, 0.72, 0.04, 0.025], ...
     'BackgroundColor', [1 1 1]);
 
 uicontrol(fig, 'Style', 'pushbutton', 'String', 'Ruler', ...
-    'Units', 'normalized', 'Position', [0.46, 0.84, 0.041, 0.025], ...
+    'Units', 'normalized', 'Position', [0.46, 0.83, 0.04, 0.025], ...
     'BackgroundColor', [0.9 0.9 1], ...
     'Callback', @(~,~) startRulerMode());
 
 uicontrol(fig, 'Style', 'pushbutton', 'String', 'Clear Ruler', ...
-    'Units', 'normalized', 'Position', [0.46, 0.80, 0.041, 0.025], ...
+    'Units', 'normalized', 'Position', [0.46, 0.795, 0.04, 0.025], ...
     'BackgroundColor', [1 0.9 0.9], ...
     'Callback', @(~,~) clearRuler());
 
     %% Axes
     % Leave axOriginal alone, so ROI dragging works
-    axOriginal = axes('Parent', fig, 'Position', [0.05 0.6 0.4 0.35]);
+    axOriginal = axes('Parent', fig, 'Position', [0.05 0.6 0.35 0.35]);
     imshow(original_rgb, 'Parent', axOriginal);
     title('Original Image');
     
@@ -157,15 +208,18 @@ uicontrol(fig, 'Style', 'pushbutton', 'String', 'Clear Ruler', ...
     axCropped = axes('Parent', fig, 'Position', [0.5 0.6 0.25 0.35]);
     hCroppedRGB = imshow(zeros(cropSize(2), cropSize(1), 3), 'Parent', axCropped, 'InitialMagnification', 'fit');
     title('Adjusted RGB Crop');
+    rulerTool = ruler(fig, axCropped, hCroppedRGB, rulerDistanceBox, ...
+        @() set(hCroppedRGB, 'ButtonDownFcn', @labelClick));
+    scaleBarTool = scaleBar(axCropped, hCroppedRGB, conversion_factor, scaleBarBox);
 
 
-    axR = axes('Parent', fig, 'Position', [0.05 0.25 0.25 0.25]);
+    axR = axes('Parent', fig, 'Position', [0.05 0.25 0.21 0.25]);
     hR = imshow(zeros(cropSize(2), cropSize(1), 3), 'Parent', axR, 'InitialMagnification', 'fit'); title(axR, 'Red');
     axis(axR, 'image');
-    axG = axes('Parent', fig, 'Position', [0.375 0.25 0.25 0.25]);
+    axG = axes('Parent', fig, 'Position', [0.375 0.25 0.21 0.25]);
     hG = imshow(zeros(cropSize(2), cropSize(1), 3), 'Parent', axG, 'InitialMagnification', 'fit'); title(axG, 'Green');
     axis(axG, 'image');
-    axB = axes('Parent', fig, 'Position', [0.7 0.25 0.25 0.25]);
+    axB = axes('Parent', fig, 'Position', [0.7 0.25 0.21 0.25]);
     hB = imshow(zeros(cropSize(2), cropSize(1), 3), 'Parent', axB, 'InitialMagnification', 'fit'); title(axB, 'Blue');
     axis(axB, 'image');
 
@@ -201,17 +255,17 @@ uicontrol(fig, 'Style', 'pushbutton', 'String', 'Clear Ruler', ...
     coord_boxes = gobjects(1,4);
     % X1, Y1 at bottom-left of original image
     coord_boxes(1) = uicontrol(fig, 'Style', 'text', 'String', '0', 'Units','normalized', ...
-        'Position', [0.01, 0.58, 0.05, 0.02], 'BackgroundColor', [1 1 1], 'Callback', @(src,~) moveROIFromBoxes());
-    uicontrol(fig, 'Style', 'text', 'String', 'X1', 'Units','normalized', 'Position', [0.01, 0.6, 0.05, 0.02]);
+        'Position', [0.01, 0.555, 0.05, 0.02], 'BackgroundColor', [1 1 1]);
+    uicontrol(fig, 'Style', 'text', 'String', 'X1', 'Units','normalized', 'Position', [0.01, 0.575, 0.05, 0.02]);
     coord_boxes(2) = uicontrol(fig, 'Style', 'text', 'String', '0', 'Units','normalized', ...
-        'Position', [0.06, 0.58, 0.05, 0.02], 'BackgroundColor', [1 1 1], 'Callback', @(src,~) moveROIFromBoxes());
-    uicontrol(fig, 'Style', 'text', 'String', 'Y1', 'Units','normalized', 'Position', [0.06, 0.6, 0.05, 0.02]);
+        'Position', [0.06, 0.555, 0.05, 0.02], 'BackgroundColor', [1 1 1]);
+    uicontrol(fig, 'Style', 'text', 'String', 'Y1', 'Units','normalized', 'Position', [0.06, 0.575, 0.05, 0.02]);
     % X2, Y2 at top-right of original image
     coord_boxes(3) = uicontrol(fig, 'Style', 'text', 'String', '0', 'Units','normalized', ...
-        'Position', [0.4, 0.93, 0.05, 0.02], 'BackgroundColor', [1 1 1], 'Callback', @(src,~) moveROIFromBoxes());
+        'Position', [0.4, 0.93, 0.05, 0.02], 'BackgroundColor', [1 1 1]);
     uicontrol(fig, 'Style', 'text', 'String', 'X2', 'Units','normalized', 'Position', [0.4, 0.95, 0.05, 0.02]);
     coord_boxes(4) = uicontrol(fig, 'Style', 'text', 'String', '0', 'Units','normalized', ...
-        'Position', [0.45, 0.93, 0.05, 0.02], 'BackgroundColor', [1 1 1], 'Callback', @(src,~) moveROIFromBoxes());
+        'Position', [0.45, 0.93, 0.05, 0.02], 'BackgroundColor', [1 1 1]);
     uicontrol(fig, 'Style', 'text', 'String', 'Y2', 'Units','normalized', 'Position', [0.45, 0.95, 0.05, 0.02]);
 
     %% Save and Reset buttons
@@ -321,7 +375,7 @@ uicontrol(fig, 'Style', 'pushbutton', 'String', 'Clear Ruler', ...
     uicontrol(fig, 'Style', 'text', 'String', 'Max Overlap Threshold', ...
         'Units', 'normalized', 'Position', [0.55 0.55 0.1 0.025]);
     overlapThreshBox = uicontrol(fig, 'Style', 'edit', 'String', '40', ...
-        'Units', 'normalized', 'Position', [0.64 0.55 0.05 0.025], ...
+        'Units', 'normalized', 'Position', [0.65 0.55 0.05 0.025], ...
         'BackgroundColor', [1 1 1]);
 
     %% on/off channel
@@ -543,7 +597,7 @@ function updateSplitChannels()
     hR.CData = cat(3, filteredCopy(:,:,1), zeros(size(filteredCopy,1), size(filteredCopy,2), 2));
     hG.CData = cat(3, zeros(size(filteredCopy,1), size(filteredCopy,2)), filteredCopy(:,:,2), zeros(size(filteredCopy,1), size(filteredCopy,2)));
     hB.CData = cat(3, zeros(size(filteredCopy,1), size(filteredCopy,2)), zeros(size(filteredCopy,1), size(filteredCopy,2)), filteredCopy(:,:,3));
-end
+end     
 
 %>>>PART B<<<
 function col = modeToRGB(mode)
@@ -683,6 +737,66 @@ function toggleRemoveMode()
         end
     end
 end
+
+
+% Callback for the Rectangle Coordinates boxes: read all four and apply
+function updateRectangle()
+    if ~strcmp(currentShape, 'rectangle'), return; end
+    v = str2double({x1Edit.String, y1Edit.String, x2Edit.String, y2Edit.String});
+    drawRectangleFromCoords(v(1), v(2), v(3), v(4));
+end
+
+% Move the ROI to the given bottom-left (x1,y1) and top-right (x2,y2)
+% corners. Same convention as the X1/Y1/X2/Y2 readouts: pixels of the
+% original image, y counted up from the bottom.
+function drawRectangleFromCoords(x1, y1, x2, y2)
+    % Not a number (e.g. empty or text): put the boxes back
+    if any(isnan([x1, y1, x2, y2]))
+        syncBoxesToROI();
+        return;
+    end
+
+    % Ensure x1 < x2 and y1 < y2
+    % deal swaps the values if necessary
+    if x1 > x2
+        [x1, x2] = deal(x2, x1);
+    end
+    if y1 > y2
+        [y1, y2] = deal(y2, y1);
+    end
+
+    % Clamp to the image, using the same limits updateImage_function
+    % enforces, so the crop and the readouts match what was typed
+    x1 = min(max(round(x1), 1), imgW);
+    x2 = min(max(round(x2), 1), imgW);
+    y1 = min(max(round(y1), 0), imgH - 1);
+    y2 = min(max(round(y2), 0), imgH - 1);
+
+    % Entirely outside the image, or no area left after clamping
+    if x2 <= x1 || y2 <= y1
+        warndlg('The rectangle is outside the image or has zero size.', 'Invalid Rectangle');
+        syncBoxesToROI();
+        return;
+    end
+
+    % Inverse of the readout formulas in updateImage_function
+    pos = [x1, imgH - y2, x2 - x1, y2 - y1];   % [left top width height]
+    roi.Position = pos;
+    rectPos = pos;   % keep it if the shape is switched away and back
+
+    % Setting Position in code doesn't fire ROIMoved, so refresh by hand
+    % (this also writes the clamped values back into the boxes)
+    moveROIAction();
+end
+
+% Show the ROI's current corners in the Rectangle Coordinates boxes
+function syncBoxesToROI()
+    x1Edit.String = coord_boxes(1).String;
+    y1Edit.String = coord_boxes(2).String;
+    x2Edit.String = coord_boxes(3).String;
+    y2Edit.String = coord_boxes(4).String;
+end
+
 
 function enableRectangleDrawing()
     rectHandle = drawrectangle(axCropped, 'Color', 'm', 'LineWidth', 1.5);
@@ -908,6 +1022,12 @@ function updateImage()
     
     % --- Keep ButtonDownFcn for manual labeling ---
     set(hCroppedRGB, 'ButtonDownFcn', @labelClick);
+
+    % Keep the Rectangle Coordinates boxes showing the ROI's real corners
+    syncBoxesToROI();
+
+    % Re-place the scale bar for the new crop size
+    if ~isempty(scaleBarTool), scaleBarTool.update(); end
 end
 
 function saveAll()
@@ -1179,6 +1299,7 @@ function updateFontSize(~, ~)
         end
     end
 end
+
 %>>>PART D<<<
 function autoLabelChannel(channel)
     setMode(channel);
@@ -1245,84 +1366,13 @@ function clearAllLabels()
     updateCountDisplay();
 end
 
+% Ruler logic lives in src/ruler.m (shared with greyscale_case.m)
 function startRulerMode()
-    % rulerPoints = [];  % 清空上一次
-    clearRuler();
-    title(axCropped, 'Click two points to measure distance', 'Color', 'b');
-    set(hCroppedRGB, 'ButtonDownFcn', @rulerClick);
+    rulerTool.start();
 end
-
-function rulerClick(~,~)
-    pt = get(axCropped, 'CurrentPoint');
-    pt = pt(1, 1:2);  % [x, y]
-    rulerPoints(end+1, :) = pt;
-    % if size(rulerPoints, 1) == 2
-        % 画线
-        % Draw line that follows mouse
-        % if isgraphics(rulerLine), delete(rulerLine); end
-        % rulerLine = line(axCropped, rulerPoints(:,1), rulerPoints(:,2), ...
-        %     'Color', 'yellow', 'LineWidth', 2);
-        % 
-        % % 计算距离
-        % d = sqrt(sum(diff(rulerPoints).^2));
-        % 
-        % % 显示在 GUI 框中
-        % rulerDistanceBox.String = sprintf('%.2f', d);
-        % 
-        % % 恢复点击逻辑
-        % set(hCroppedRGB, 'ButtonDownFcn', @labelClick);
-        % title(axCropped, 'Adjusted RGB Crop');
-    if size(rulerPoints, 1) == 1
-        % First click: start a line that follows the mouse
-        rulerLine = line(axCropped, [pt(1) pt(1)], [pt(2) pt(2)], ...
-            'Color', 'yellow', 'LineWidth', 2, 'PickableParts', 'none');
-
-        % WindowButtonMotionFcn is a property that holds a callback.
-        % Whenever the mouse moves, rulerMove is called
-        set(fig, 'WindowButtonMotionFcn', @rulerMove);
-    else
-        % Second click: lock the line in place
-        set(fig, 'WindowButtonMotionFcn', '');
-        set(rulerLine, 'XData', rulerPoints(:,1), 'YData', rulerPoints(:,2));
-        d = hypot(diff(rulerPoints(:,1)), diff(rulerPoints(:,2)));
-        rulerDistanceBox.String = sprintf('%.2f', d);
-
-        set(hCroppedRGB, 'ButtonDownFcn', @labelClick);
-        title(axCropped, 'Adjusted RGB Crop');
-    end
-end
-
-% Callback function used by a figure to show the ruler line
-    function rulerMove(~,~)
-        % Runs every time the mouse moves between the two clicks
-        if ~isgraphics(rulerLine), return; end
-        cp = get(axCropped, 'CurrentPoint');
-        p2 = cp(1, 1:2);
-
-        % Keep the end of the line inside the image, so the axes never zooms out
-        [h, w, ~] = size(hCroppedRGB.CData);
-        p2(1) = min(max(p2(1), 0.5), w + 0.5);
-        p2(2) = min(max(p2(2), 0.5), h + 0.5);
-
-        set(rulerLine, 'XData', [rulerPoints(1,1) p2(1)], ...
-            'YData', [rulerPoints(1,2) p2(2)]);
-        d = hypot(p2(1) - rulerPoints(1,1), p2(2) - rulerPoints(1,2));
-        rulerDistanceBox.String = sprintf('%.2f', d);
-    end
-
 
 function clearRuler()
-    % if isgraphics(rulerLine), delete(rulerLine); end
-    % rulerLine = [];
-    % rulerPoints = [];
-    % rulerDistanceBox.String = '';
-    set(fig, 'WindowButtonMotionFcn', '');   % stop following the mouse
-    if isgraphics(rulerLine), delete(rulerLine); end
-    rulerLine = [];
-    rulerPoints = [];
-    rulerDistanceBox.String = '';
-    set(hCroppedRGB, 'ButtonDownFcn', @labelClick);
-    title(axCropped, 'Adjusted RGB Crop');
+    rulerTool.clear();
 end
 
     function convertToGray()

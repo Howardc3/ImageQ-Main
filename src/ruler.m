@@ -1,4 +1,4 @@
-function r = ruler(fig, ax, img, distanceBox, onDone)
+function r = ruler(fig, ax, img, distanceBox, onDone, umBox, pxPerUm)
 % ruler  Two-click distance tool for an image, shared by both GUIs.
 %
 %   r = ruler(fig, ax, img, distanceBox, onDone) returns a struct of
@@ -16,6 +16,12 @@ function r = ruler(fig, ax, img, distanceBox, onDone)
 %   armed, so the GUI can restore its own click handler. The axes title is
 %   saved by r.start() and restored before onDone runs.
 %
+%   r = ruler(..., onDone, umBox, pxPerUm) also shows the distance in
+%   micrometers in umBox (pxPerUm = image pixels per um). Both boxes then
+%   include their unit ("213.40 px", "2.13 um"); umBox shows 'n/a' if
+%   pxPerUm is NaN. Distances are in IMAGE pixels (axes data units), not
+%   screen pixels, so they don't change with zoom or window size.
+%
 %   The ruler's state lives in the nested functions below, so the GUI only
 %   needs to keep r.
 
@@ -25,6 +31,8 @@ function r = ruler(fig, ax, img, distanceBox, onDone)
     savedTitle = '';
     savedTitleColor = [0 0 0];
     clickFcn = @click;
+    if nargin < 6, umBox = []; end
+    if nargin < 7, pxPerUm = NaN; end
 
     r.start = @start;
     r.clear = @clearRuler;
@@ -58,7 +66,7 @@ function r = ruler(fig, ax, img, distanceBox, onDone)
             set(fig, 'WindowButtonMotionFcn', '');
             set(rulerLine, 'XData', rulerPoints(:,1), 'YData', rulerPoints(:,2));
             d = hypot(diff(rulerPoints(:,1)), diff(rulerPoints(:,2)));
-            distanceBox.String = sprintf('%.2f', d);
+            showDistance(d);
             finish();
         end
     end
@@ -81,7 +89,7 @@ function r = ruler(fig, ax, img, distanceBox, onDone)
         set(rulerLine, 'XData', [rulerPoints(1,1) p2(1)], ...
             'YData', [rulerPoints(1,2) p2(2)]);
         d = hypot(p2(1) - rulerPoints(1,1), p2(2) - rulerPoints(1,2));
-        distanceBox.String = sprintf('%.2f', d);
+        showDistance(d);
     end
 
     function clearRuler()
@@ -91,8 +99,28 @@ function r = ruler(fig, ax, img, distanceBox, onDone)
         if isgraphics(rulerLine), delete(rulerLine); end
         rulerLine = [];
         rulerPoints = zeros(0,2);
-        distanceBox.String = '';
+        showDistance([]);
         if active, finish(); end
+    end
+
+    % Write d (image px) into the box(es); [] empties them
+    function showDistance(d)
+        if isempty(umBox)
+            % px-only GUI: plain number, unit is in the label
+            if isempty(d), distanceBox.String = ''; else, distanceBox.String = sprintf('%.2f', d); end
+            return;
+        end
+        if isempty(d)
+            distanceBox.String = '';
+            umBox.String = '';
+        else
+            distanceBox.String = sprintf('%.2f px', d);
+            if isfinite(pxPerUm) && pxPerUm > 0
+                umBox.String = sprintf('%.2f \x3BCm', d / pxPerUm);   % \x3BC = micro sign
+            else
+                umBox.String = 'n/a';
+            end
+        end
     end
 
     function finish()

@@ -180,12 +180,19 @@ function setShape(shape)
     updateImage();
 end
 
-uicontrol(fig, 'Style', 'text', 'String', 'Distance (px):', ...
-    'Units', 'normalized', 'Position', [0.46, 0.74, 0.04, 0.025]);
+% Ruler readouts: image px and um, each box shows its own unit
+% (fits between Clear Ruler at 0.795 and the R toggle at 0.705)
+uicontrol(fig, 'Style', 'text', 'String', 'Distance:', ...
+    'Units', 'normalized', 'Position', [0.46, 0.765, 0.04, 0.025]);
 
 rulerDistanceBox = uicontrol(fig, 'Style', 'edit', ...
     'String', '', 'Enable', 'inactive', ...
-    'Units', 'normalized', 'Position', [0.46, 0.72, 0.04, 0.025], ...
+    'Units', 'normalized', 'Position', [0.46, 0.74, 0.04, 0.025], ...
+    'BackgroundColor', [1 1 1]);
+
+rulerUmBox = uicontrol(fig, 'Style', 'edit', ...
+    'String', '', 'Enable', 'inactive', ...
+    'Units', 'normalized', 'Position', [0.46, 0.71, 0.04, 0.025], ...
     'BackgroundColor', [1 1 1]);
 
 uicontrol(fig, 'Style', 'pushbutton', 'String', 'Ruler', ...
@@ -209,7 +216,8 @@ uicontrol(fig, 'Style', 'pushbutton', 'String', 'Clear Ruler', ...
     hCroppedRGB = imshow(zeros(cropSize(2), cropSize(1), 3), 'Parent', axCropped, 'InitialMagnification', 'fit');
     title('Adjusted RGB Crop');
     rulerTool = ruler(fig, axCropped, hCroppedRGB, rulerDistanceBox, ...
-        @() set(hCroppedRGB, 'ButtonDownFcn', @labelClick));
+        @() set(hCroppedRGB, 'ButtonDownFcn', @labelClick), ...
+        rulerUmBox, conversion_factor);
     scaleBarTool = scaleBar(axCropped, hCroppedRGB, conversion_factor, scaleBarBox);
 
 
@@ -394,7 +402,7 @@ uicontrol(fig, 'Style', 'pushbutton', 'String', 'Clear Ruler', ...
     %% Run first update
     updateImage();
     % === Labeling mode and state ===
-    currentMode = 'R';  % can be 'R', 'G', or 'B'
+    currentMode = '';  % 'R','G','B','RG','GB','RB','RGB', or '' = none selected (clicks don't label)
     
     rCounter = 0; rHandles = []; rPositions = zeros(0,2);
     gCounter = 0; gHandles = []; gPositions = zeros(0,2);
@@ -425,31 +433,31 @@ uicontrol(fig, 'Style', 'pushbutton', 'String', 'Clear Ruler', ...
 
     modeButtons.R = uicontrol(fig, 'Style', 'pushbutton', 'String', 'R', ...
         'Units','normalized', 'Position', [0.76, 0.68, 0.02, 0.025], ...
-        'BackgroundColor', [1 0.8 0.8], 'Callback', @(~,~) setMode('R'));
+        'BackgroundColor', [1 0.8 0.8], 'Callback', @(~,~) modeButtonClick('R'));
 
     modeButtons.G = uicontrol(fig, 'Style', 'pushbutton', 'String', 'G', ...
         'Units','normalized', 'Position', [0.76, 0.64, 0.02, 0.025], ...
-        'BackgroundColor', [0.8 1 0.8], 'Callback', @(~,~) setMode('G'));
+        'BackgroundColor', [0.8 1 0.8], 'Callback', @(~,~) modeButtonClick('G'));
 
     modeButtons.B = uicontrol(fig, 'Style', 'pushbutton', 'String', 'B', ...
         'Units','normalized', 'Position', [0.76, 0.6, 0.02, 0.025], ...
-        'BackgroundColor', [0.8 0.8 1], 'Callback', @(~,~) setMode('B'));
+        'BackgroundColor', [0.8 0.8 1], 'Callback', @(~,~) modeButtonClick('B'));
 
     modeButtons.RG = uicontrol(fig, 'Style', 'pushbutton', 'String', 'R+G', ...
         'Units','normalized', 'Position', [0.82, 0.68, 0.04, 0.025], ...
-        'BackgroundColor', [1 1 0.8], 'Callback', @(~,~) setMode('RG'));
+        'BackgroundColor', [1 1 0.8], 'Callback', @(~,~) modeButtonClick('RG'));
 
     modeButtons.GB = uicontrol(fig, 'Style', 'pushbutton', 'String', 'G+B', ...
         'Units','normalized', 'Position', [0.82, 0.64, 0.04, 0.025], ...
-        'BackgroundColor', [0.9 1 1], 'Callback', @(~,~) setMode('GB'));
+        'BackgroundColor', [0.9 1 1], 'Callback', @(~,~) modeButtonClick('GB'));
 
     modeButtons.RB = uicontrol(fig, 'Style', 'pushbutton', 'String', 'R+B', ...
         'Units','normalized', 'Position', [0.82, 0.6, 0.04, 0.025], ...
-        'BackgroundColor', [1 0.9 1], 'Callback', @(~,~) setMode('RB'));
+        'BackgroundColor', [1 0.9 1], 'Callback', @(~,~) modeButtonClick('RB'));
 
     modeButtons.RGB = uicontrol(fig, 'Style', 'pushbutton', 'String', 'R+G+B', ...
         'Units','normalized', 'Position', [0.90, 0.66, 0.04, 0.025], ...
-        'BackgroundColor', [1 0.9 1], 'Callback', @(~,~) setMode('RGB'));
+        'BackgroundColor', [1 0.9 1], 'Callback', @(~,~) modeButtonClick('RGB'));
 
 
 
@@ -481,6 +489,7 @@ uicontrol(fig, 'Style', 'pushbutton', 'String', 'Clear Ruler', ...
     'Units','normalized', 'Position', [0.87, 0.75, 0.06, 0.025]);
 
 function labelClick(~, ~)
+    if isempty(currentMode), return; end  % no label mode selected
     pt = get(axCropped, 'CurrentPoint');
     x = pt(1,1); y = pt(1,2);
     fontSize = str2double(fontSizeBox.String);
@@ -497,6 +506,9 @@ function labelClick(~, ~)
             rPositions = reshape(rPositions, [], 2);
         end
         rPositions(end+1,:) = [x, y];
+        rTraceH(end+1) = gobjects(1);  % no contour for a manual label
+        rAreas(end+1) = NaN;           % unknown area
+        rMeans(end+1) = NaN;           % unknown mean intensity
     case 'G'
         gCounter = gCounter + 1;
         h = text(axCropped, x, y, num2str(gCounter), 'Color', fontColor, ...
@@ -506,6 +518,9 @@ function labelClick(~, ~)
             gPositions = reshape(gPositions, [], 2);
         end
         gPositions(end+1,:) = [x, y];
+        gTraceH(end+1) = gobjects(1);  % no contour for a manual label
+        gAreas(end+1) = NaN;           % unknown area
+        gMeans(end+1) = NaN;           % unknown mean intensity
     case 'B'
         bCounter = bCounter + 1;
         h = text(axCropped, x, y, num2str(bCounter), 'Color', fontColor, ...
@@ -515,6 +530,9 @@ function labelClick(~, ~)
             bPositions = reshape(bPositions, [], 2);
         end
         bPositions(end+1,:) = [x, y];
+        bTraceH(end+1) = gobjects(1);  % no contour for a manual label
+        bAreas(end+1) = NaN;           % unknown area
+        bMeans(end+1) = NaN;           % unknown mean intensity
         
     case 'RG'
         rgCounter = rgCounter + 1;
@@ -525,6 +543,9 @@ function labelClick(~, ~)
             rgPositions = reshape(rgPositions, [], 2);
         end
         rgPositions(end+1,:) = [x, y];
+        rgTraceH(end+1) = gobjects(1);  % no contour for a manual label
+        rgAreas(end+1) = NaN;           % unknown area
+        rgMeans(end+1) = NaN;           % unknown mean intensity
     case 'GB'
         gbCounter = gbCounter + 1;
         h = text(axCropped, x, y, num2str(gbCounter), 'Color', fontColor, ...
@@ -534,6 +555,9 @@ function labelClick(~, ~)
             gbPositions = reshape(gbPositions, [], 2);
         end
         gbPositions(end+1,:) = [x, y];
+        gbTraceH(end+1) = gobjects(1);  % no contour for a manual label
+        gbAreas(end+1) = NaN;           % unknown area
+        gbMeans(end+1) = NaN;           % unknown mean intensity
     case 'RB'
         rbCounter = rbCounter + 1;
         h = text(axCropped, x, y, num2str(rbCounter), 'Color', fontColor, ...
@@ -543,6 +567,9 @@ function labelClick(~, ~)
             rbPositions = reshape(rbPositions, [], 2);
         end
         rbPositions(end+1,:) = [x, y];
+        rbTraceH(end+1) = gobjects(1);  % no contour for a manual label
+        rbAreas(end+1) = NaN;           % unknown area
+        rbMeans(end+1) = NaN;           % unknown mean intensity
     case 'RGB'
         rgbCounter = rgbCounter + 1;
         h = text(axCropped, x, y, num2str(rgbCounter), 'Color', fontColor, ...
@@ -552,6 +579,9 @@ function labelClick(~, ~)
             rgbPositions = reshape(rgbPositions, [], 2);
         end
         rgbPositions(end+1,:) = [x, y];
+        rgbTraceH(end+1) = gobjects(1);  % no contour for a manual label
+        rgbAreas(end+1) = NaN;           % unknown area
+        rgbMeans(end+1) = NaN;           % unknown mean intensity
     end
         
         updateCountDisplay();
@@ -749,6 +779,7 @@ end
 % Move the ROI to the given bottom-left (x1,y1) and top-right (x2,y2)
 % corners. Same convention as the X1/Y1/X2/Y2 readouts: pixels of the
 % original image, y counted up from the bottom.
+% Not to be confused with the other rectangle functions that draw the remove box.
 function drawRectangleFromCoords(x1, y1, x2, y2)
     % Not a number (e.g. empty or text): put the boxes back
     if any(isnan([x1, y1, x2, y2]))
@@ -834,6 +865,22 @@ function rectangleDone(rect)
             [rbHandles, rbPositions, rbTraceH, rbAreas, rbMeans, rbCounter] = ...
             removeInRegion(rbHandles, rbPositions, rbTraceH, rbAreas, rbMeans, boxX1, boxY1, boxX2, boxY2);
         case 'RGB'
+            [rgbHandles, rgbPositions, rgbTraceH, rgbAreas, rgbMeans, rgbCounter] = ...
+            removeInRegion(rgbHandles, rgbPositions, rgbTraceH, rgbAreas, rgbMeans, boxX1, boxY1, boxX2, boxY2);
+        case ''
+            % No mode selected: remove the labels of every mode inside the box
+            [rHandles, rPositions, rTraceH, rAreas, rMeans, rCounter] = ...
+            removeInRegion(rHandles, rPositions, rTraceH, rAreas, rMeans, boxX1, boxY1, boxX2, boxY2);
+            [gHandles, gPositions, gTraceH, gAreas, gMeans, gCounter] = ...
+            removeInRegion(gHandles, gPositions, gTraceH, gAreas, gMeans, boxX1, boxY1, boxX2, boxY2);
+            [bHandles, bPositions, bTraceH, bAreas, bMeans, bCounter] = ...
+            removeInRegion(bHandles, bPositions, bTraceH, bAreas, bMeans, boxX1, boxY1, boxX2, boxY2);
+            [rgHandles, rgPositions, rgTraceH, rgAreas, rgMeans, rgCounter] = ...
+            removeInRegion(rgHandles, rgPositions, rgTraceH, rgAreas, rgMeans, boxX1, boxY1, boxX2, boxY2);
+            [gbHandles, gbPositions, gbTraceH, gbAreas, gbMeans, gbCounter] = ...
+            removeInRegion(gbHandles, gbPositions, gbTraceH, gbAreas, gbMeans, boxX1, boxY1, boxX2, boxY2);
+            [rbHandles, rbPositions, rbTraceH, rbAreas, rbMeans, rbCounter] = ...
+            removeInRegion(rbHandles, rbPositions, rbTraceH, rbAreas, rbMeans, boxX1, boxY1, boxX2, boxY2);
             [rgbHandles, rgbPositions, rgbTraceH, rgbAreas, rgbMeans, rgbCounter] = ...
             removeInRegion(rgbHandles, rgbPositions, rgbTraceH, rgbAreas, rgbMeans, boxX1, boxY1, boxX2, boxY2);
     end
@@ -1211,6 +1258,17 @@ end
 
 
 
+% Callback for the R/G/B/R+G/... buttons: clicking the selected mode again
+% deselects it (no mode -> clicks on the image don't add labels).
+% Auto Label calls setMode directly, so it always selects.
+function modeButtonClick(mode)
+    if strcmp(currentMode, mode)
+        setMode('');
+    else
+        setMode(mode);
+    end
+end
+
 function setMode(mode)
     currentMode = mode;
 
@@ -1220,9 +1278,11 @@ function setMode(mode)
         set(btn, 'FontWeight', 'normal');  % reset normal
     end
 
-    % Highlight selected one
-    activeBtn = modeButtons.(mode);
-    set(activeBtn, 'FontWeight', 'bold');  % bold (fitUicontrolText refits the size)
+    % Highlight selected one (none if mode is '')
+    if ~isempty(mode)
+        activeBtn = modeButtons.(mode);
+        set(activeBtn, 'FontWeight', 'bold');  % bold (fitUicontrolText refits the size)
+    end
 
     % Optional: Change background color darker too
     switch mode

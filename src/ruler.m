@@ -75,6 +75,7 @@ function r = ruler(fig, ax, img, distanceBox, onDone, umBox, pxPerUm)
         % Runs every time the mouse moves between the two clicks.
         % Stop following if the GUI switched to another tool meanwhile.
         if ~isgraphics(rulerLine) || ~isequal(img.ButtonDownFcn, clickFcn)
+            clearRuler();
             return;
         end
         cp = get(ax, 'CurrentPoint');

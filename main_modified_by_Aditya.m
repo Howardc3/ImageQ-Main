@@ -6,7 +6,8 @@ function main_modified_by_Aditya(openDir, animal_name)
     filteredCopy = []; 
     channelActive = [true true true];  % [R, G, B] initially all ON
     removeMode = false;  % Initially OFF
-    rectHandle = [];
+    addMode = false;     % Add tool (box -> label the largest object), initially OFF
+    rulerOn = false;     % ruler armed or measuring: it gets the clicks until it finishes
     modeButtons = struct();  % 🛠 now officially exists
     currentShape ='rectangle'; % Add shape state variable
     roi = []; % ROI object
@@ -158,7 +159,8 @@ end
 %% Shape operation functions (simplified)
 function moveROIAction()
     updateImage();
-    clearAllLabels(); 
+    clearEveryMode();
+    rulerTool.clear();   % its line was measured on the old crop
 end
 
 function setShape(shape)
@@ -178,6 +180,8 @@ function setShape(shape)
     
     createROI();
     updateImage();
+    clearEveryMode();   % new crop, so the old labels no longer line up
+    rulerTool.clear();
 end
 
 % Ruler readouts: image px and um, each box shows its own unit
@@ -216,8 +220,7 @@ uicontrol(fig, 'Style', 'pushbutton', 'String', 'Clear Ruler', ...
     hCroppedRGB = imshow(zeros(cropSize(2), cropSize(1), 3), 'Parent', axCropped, 'InitialMagnification', 'fit');
     title('Adjusted RGB Crop');
     rulerTool = ruler(fig, axCropped, hCroppedRGB, rulerDistanceBox, ...
-        @() set(hCroppedRGB, 'ButtonDownFcn', @labelClick), ...
-        rulerUmBox, conversion_factor);
+        @rulerDone, rulerUmBox, conversion_factor);
     scaleBarTool = scaleBar(axCropped, hCroppedRGB, conversion_factor, scaleBarBox);
 
 
@@ -309,6 +312,11 @@ uicontrol(fig, 'Style', 'pushbutton', 'String', 'Clear Ruler', ...
     removeButton = uicontrol(fig, 'Style', 'pushbutton', 'String', 'Remove Labels (Off)', ...
         'Units','normalized', 'Position', [0.76, 0.55, 0.1, 0.03], ...
         'BackgroundColor', [1 0.9 0.8], 'Callback', @(~,~) toggleRemoveMode());
+
+    % Right of Remove, below Traces On (0.58)
+    addButton = uicontrol(fig, 'Style', 'pushbutton', 'String', 'Add Labels (Off)', ...
+        'Units','normalized', 'Position', [0.87, 0.55, 0.1, 0.03], ...
+        'BackgroundColor', [0.85 1 0.85], 'Callback', @(~,~) toggleAddMode());
 
     %% Add Import parameters button
     uicontrol(fig, 'Style', 'pushbutton', 'String', 'Import parameters', ...
@@ -500,7 +508,8 @@ function labelClick(~, ~)
     case 'R'
         rCounter = rCounter + 1;
         h = text(axCropped, x, y, num2str(rCounter), 'Color', fontColor, ...
-            'FontSize', fontSize, 'FontWeight', 'bold', 'HorizontalAlignment', 'center','Clipping', 'on');
+            'FontSize', fontSize, 'FontWeight', 'bold', 'HorizontalAlignment', 'center','Clipping', 'on', ...
+            'PickableParts', 'none');   % clicks pass through to the image
         rHandles(end+1) = h;
         if size(rPositions, 2) ~= 2
             rPositions = reshape(rPositions, [], 2);
@@ -512,7 +521,8 @@ function labelClick(~, ~)
     case 'G'
         gCounter = gCounter + 1;
         h = text(axCropped, x, y, num2str(gCounter), 'Color', fontColor, ...
-            'FontSize', fontSize, 'FontWeight', 'bold', 'HorizontalAlignment', 'center','Clipping', 'on');
+            'FontSize', fontSize, 'FontWeight', 'bold', 'HorizontalAlignment', 'center','Clipping', 'on', ...
+            'PickableParts', 'none');   % clicks pass through to the image
         gHandles(end+1) = h;
         if size(gPositions, 2) ~= 2
             gPositions = reshape(gPositions, [], 2);
@@ -524,7 +534,8 @@ function labelClick(~, ~)
     case 'B'
         bCounter = bCounter + 1;
         h = text(axCropped, x, y, num2str(bCounter), 'Color', fontColor, ...
-            'FontSize', fontSize, 'FontWeight', 'bold', 'HorizontalAlignment', 'center','Clipping', 'on');
+            'FontSize', fontSize, 'FontWeight', 'bold', 'HorizontalAlignment', 'center','Clipping', 'on', ...
+            'PickableParts', 'none');   % clicks pass through to the image
         bHandles(end+1) = h;
         if size(bPositions, 2) ~= 2
             bPositions = reshape(bPositions, [], 2);
@@ -537,7 +548,8 @@ function labelClick(~, ~)
     case 'RG'
         rgCounter = rgCounter + 1;
         h = text(axCropped, x, y, num2str(rgCounter), 'Color', fontColor, ...
-            'FontSize', fontSize, 'FontWeight', 'bold', 'HorizontalAlignment', 'center','Clipping', 'on');
+            'FontSize', fontSize, 'FontWeight', 'bold', 'HorizontalAlignment', 'center','Clipping', 'on', ...
+            'PickableParts', 'none');   % clicks pass through to the image
         rgHandles(end+1) = h;
         if size(rgPositions, 2) ~= 2
             rgPositions = reshape(rgPositions, [], 2);
@@ -549,7 +561,8 @@ function labelClick(~, ~)
     case 'GB'
         gbCounter = gbCounter + 1;
         h = text(axCropped, x, y, num2str(gbCounter), 'Color', fontColor, ...
-            'FontSize', fontSize, 'FontWeight', 'bold', 'HorizontalAlignment', 'center','Clipping', 'on');
+            'FontSize', fontSize, 'FontWeight', 'bold', 'HorizontalAlignment', 'center','Clipping', 'on', ...
+            'PickableParts', 'none');   % clicks pass through to the image
         gbHandles(end+1) = h;
         if size(gbPositions, 2) ~= 2
             gbPositions = reshape(gbPositions, [], 2);
@@ -561,7 +574,8 @@ function labelClick(~, ~)
     case 'RB'
         rbCounter = rbCounter + 1;
         h = text(axCropped, x, y, num2str(rbCounter), 'Color', fontColor, ...
-            'FontSize', fontSize, 'FontWeight', 'bold', 'HorizontalAlignment', 'center','Clipping', 'on');
+            'FontSize', fontSize, 'FontWeight', 'bold', 'HorizontalAlignment', 'center','Clipping', 'on', ...
+            'PickableParts', 'none');   % clicks pass through to the image
         rbHandles(end+1) = h;
         if size(rbPositions, 2) ~= 2
             rbPositions = reshape(rbPositions, [], 2);
@@ -573,7 +587,8 @@ function labelClick(~, ~)
     case 'RGB'
         rgbCounter = rgbCounter + 1;
         h = text(axCropped, x, y, num2str(rgbCounter), 'Color', fontColor, ...
-            'FontSize', fontSize, 'FontWeight', 'bold', 'HorizontalAlignment', 'center','Clipping', 'on');
+            'FontSize', fontSize, 'FontWeight', 'bold', 'HorizontalAlignment', 'center','Clipping', 'on', ...
+            'PickableParts', 'none');   % clicks pass through to the image
         rgbHandles(end+1) = h;
         if size(rgbPositions, 2) ~= 2
             rgbPositions = reshape(rgbPositions, [], 2);
@@ -658,33 +673,44 @@ function [amin, amax] = limitsFor(mode)
     end
 end
 
-function plane = pickPlane(img, idx)
-    % prefer filteredCopy if it has been created; else adjustedCopy
-    if ~isempty(img)
-        plane = img(:,:,idx);
-    else
-        plane = adjustedCopy(:,:,idx);
-    end
-end
-
-function bw = makeMaskFor(mode)
-    % Otsu threshold selected channels; combined modes require overlap across channels.
-    use = filteredCopy;   % uses filtered result if you ran "Filter R/G/B"
-    if isempty(use); use = adjustedCopy; end
-
-    idx = channelsForMode(mode);
-    bwStack = false(size(use,1), size(use,2), numel(idx));
-    
-    for i = 1:numel(idx)
-       bwStack(:,:,i) = imbinarize(use(:,:,idx(i)));
-    end 
-    bw = all(bwStack, 3);
-end
+% Unused: traceAndLabel_function.m builds the mask itself.
+% function plane = pickPlane(img, idx)
+%     % prefer filteredCopy if it has been created; else adjustedCopy
+%     if ~isempty(img)
+%         plane = img(:,:,idx);
+%     else
+%         plane = adjustedCopy(:,:,idx);
+%     end
+% end
+%
+% function bw = makeMaskFor(mode)
+%     % Otsu threshold selected channels; combined modes require overlap across channels.
+%     use = filteredCopy;   % uses filtered result if you ran "Filter R/G/B"
+%     if isempty(use); use = adjustedCopy; end
+%
+%     idx = channelsForMode(mode);
+%     bwStack = false(size(use,1), size(use,2), numel(idx));
+%
+%     for i = 1:numel(idx)
+%        bwStack(:,:,i) = imbinarize(use(:,:,idx(i)));
+%     end
+%     bw = all(bwStack, 3);
+% end
 
 %>>>END PART B<<<
 %>>>PART C<<<
 function [Hout, Pout, Cout, Aout, Mout, counterOut] = ...
          traceAndLabel(mode, Hin, Pin, Cin, Ain, Min, counterIn)
+
+    % Re-running replaces this mode's earlier auto labels instead of adding
+    % a second set on top. Manual labels (no 'auto' Tag) are kept, and
+    % traceAndLabel_function skips the cells they sit on.
+    % get(), not h.Tag: the handle arrays start as [] (double), so they
+    % hold numeric handles, which don't support dot indexing
+    isAuto = arrayfun(@(h) isgraphics(h) && strcmp(get(h, 'Tag'), 'auto'), Hin);
+    if any(isAuto)
+        [Hin, Pin, Cin, Ain, Min, counterIn] = dropLabels(Hin, Pin, Cin, Ain, Min, isAuto);
+    end
 
     [amin, amax] = limitsFor(mode);
     fs = max(6, str2double(fontSizeBox.String));
@@ -750,95 +776,53 @@ function toggleTraceSet(handles)
     end
 end
 
+%% What a click on the crop does: one place decides
+% Priority: ruler (until its measurement finishes) > Remove/Add box >
+% labelling. labelClick itself does nothing while no label mode is
+% selected, so the image always has a click handler.
+function refreshButtonDownFcn()
+    if rulerOn
+        set(hCroppedRGB, 'ButtonDownFcn', rulerTool.click);
+    elseif removeMode || addMode
+        set(hCroppedRGB, 'ButtonDownFcn', @boxClick);
+    else
+        set(hCroppedRGB, 'ButtonDownFcn', @labelClick);
+    end
+end
+
+% Remove/Add box: the press starts a rubber band, the release ends it.
+% Nothing is left waiting between boxes, so turning the tool off or
+% switching tools just changes what the next press does.
+function boxClick(~, ~)
+    p1 = get(axCropped, 'CurrentPoint');   % where the button went down
+    rbbox;                                 % rubber band until the button is released
+    p2 = get(axCropped, 'CurrentPoint');   % where it was released
+    p1 = p1(1,1:2); p2 = p2(1,1:2);
+    boxPos = [min(p1, p2), abs(p2 - p1)];  % [x y w h] in crop (image) pixels
+    if any(boxPos(3:4) < 1), return; end   % a click, not a drag
+
+    if removeMode
+        rectangleDone(boxPos);
+    elseif addMode && ~isempty(currentMode)
+        addLabelInBox(boxPos);
+    end
+end
+
 function toggleRemoveMode()
     removeMode = ~removeMode;
     if removeMode
+        if addMode, toggleAddMode(); end  % only one box tool at a time
         removeButton.String = 'Remove (On)';
         set(fig, 'Pointer', 'crosshair');
-        enableRectangleDrawing();
     else
         removeButton.String = 'Remove (Off)';
         set(fig, 'Pointer', 'arrow');
-        set(hCroppedRGB, 'ButtonDownFcn', @labelClick);
-
-        % 🔥 Cancel any unfinished rectangle
-        if exist('rectHandle', 'var') && isgraphics(rectHandle)
-            delete(rectHandle);
-        end
     end
+    refreshButtonDownFcn();
 end
 
-
-% Callback for the Rectangle Coordinates boxes: read all four and apply
-function updateRectangle()
-    if ~strcmp(currentShape, 'rectangle'), return; end
-    v = str2double({x1Edit.String, y1Edit.String, x2Edit.String, y2Edit.String});
-    drawRectangleFromCoords(v(1), v(2), v(3), v(4));
-end
-
-% Move the ROI to the given bottom-left (x1,y1) and top-right (x2,y2)
-% corners. Same convention as the X1/Y1/X2/Y2 readouts: pixels of the
-% original image, y counted up from the bottom.
-% Not to be confused with the other rectangle functions that draw the remove box.
-function drawRectangleFromCoords(x1, y1, x2, y2)
-    % Not a number (e.g. empty or text): put the boxes back
-    if any(isnan([x1, y1, x2, y2]))
-        syncBoxesToROI();
-        return;
-    end
-
-    % Ensure x1 < x2 and y1 < y2
-    % deal swaps the values if necessary
-    if x1 > x2
-        [x1, x2] = deal(x2, x1);
-    end
-    if y1 > y2
-        [y1, y2] = deal(y2, y1);
-    end
-
-    % Clamp to the image, using the same limits updateImage_function
-    % enforces, so the crop and the readouts match what was typed
-    x1 = min(max(round(x1), 1), imgW);
-    x2 = min(max(round(x2), 1), imgW);
-    y1 = min(max(round(y1), 0), imgH - 1);
-    y2 = min(max(round(y2), 0), imgH - 1);
-
-    % Entirely outside the image, or no area left after clamping
-    if x2 <= x1 || y2 <= y1
-        warndlg('The rectangle is outside the image or has zero size.', 'Invalid Rectangle');
-        syncBoxesToROI();
-        return;
-    end
-
-    % Inverse of the readout formulas in updateImage_function
-    pos = [x1, imgH - y2, x2 - x1, y2 - y1];   % [left top width height]
-    roi.Position = pos;
-    rectPos = pos;   % keep it if the shape is switched away and back
-
-    % Setting Position in code doesn't fire ROIMoved, so refresh by hand
-    % (this also writes the clamped values back into the boxes)
-    moveROIAction();
-end
-
-% Show the ROI's current corners in the Rectangle Coordinates boxes
-function syncBoxesToROI()
-    x1Edit.String = coord_boxes(1).String;
-    y1Edit.String = coord_boxes(2).String;
-    x2Edit.String = coord_boxes(3).String;
-    y2Edit.String = coord_boxes(4).String;
-end
-
-
-function enableRectangleDrawing()
-    rectHandle = drawrectangle(axCropped, 'Color', 'm', 'LineWidth', 1.5);
-    rectangleDone(rectHandle);
-end
-
-function rectangleDone(rect)
-    % After rectangle is drawn, delete labels inside
-    boxPos = rect.Position;
-    delete(rect);  % 🔥 delete the rectangle right after finishing drawing
-
+% Delete the labels inside a Remove box (boxPos = [x y w h])
+function rectangleDone(boxPos)
     % Get box corners
     boxX1 = boxPos(1); boxY1 = boxPos(2);
     boxX2 = boxX1 + boxPos(3);
@@ -886,14 +870,6 @@ function rectangleDone(rect)
     end
 
     updateCountDisplay();
-
-    if removeMode  % double-check it again AFTER drawing
-        enableRectangleDrawing();  
-    else
-        set(fig, 'Pointer', 'arrow');  % Reset pointer too when finished
-        set(hCroppedRGB, 'ButtonDownFcn', @labelClick);  % Restore click for manual labeling
-    end
-
 end
 
 function [H, P, T, A, M, counter] = removeInRegion(H, P, T, A, M, boxX1, boxY1, boxX2, boxY2)
@@ -923,6 +899,108 @@ function [H, P, T, A, M, counter] = removeInRegion(H, P, T, A, M, boxX1, boxY1, 
         if isgraphics(H(i)), set(H(i), 'String', num2str(i)); end
     end
     counter = numel(H);
+end
+
+% Delete the labels where drop is true (text + contour), keep the parallel
+% arrays in step, and renumber the rest 1..n
+function [H, P, T, A, M, counter] = dropLabels(H, P, T, A, M, drop)
+    drop = logical(drop(:)');   % row, so the loop visits one index at a time
+    for i = find(drop)
+        if isgraphics(H(i)), delete(H(i)); end
+        if i <= numel(T) && isgraphics(T(i)), delete(T(i)); end
+    end
+    keep = ~drop;
+    H = H(keep);
+    P = P(keep,:);
+    if ~isempty(T), T = T(keep); else, T = gobjects(0); end
+    if ~isempty(A), A = A(keep); end
+    if ~isempty(M), M = M(keep); end
+    if isempty(P), P = zeros(0,2); end
+
+    for i = 1:numel(H)
+        if isgraphics(H(i)), set(H(i), 'String', num2str(i)); end
+    end
+    counter = numel(H);
+end
+
+%% Add tool: draw a box, the largest bright object in it gets a label + contour
+% Uses the selected label mode's channels (overlap modes AND them). The
+% label has no 'auto' Tag, so it counts as manual: re-running Auto Label
+% keeps it and skips its cell. The box itself is drawn by boxClick.
+function toggleAddMode()
+    addMode = ~addMode;
+    if addMode
+        if removeMode, toggleRemoveMode(); end  % only one box tool at a time
+        addButton.String = 'Add (On)';
+        set(fig, 'Pointer', 'crosshair');
+    else
+        addButton.String = 'Add (Off)';
+        set(fig, 'Pointer', 'arrow');
+    end
+    refreshButtonDownFcn();
+end
+
+function addLabelInBox(boxPos)
+    % Same image choices as auto-labeling: mask from filteredCopy if a
+    % filter has run, mean intensity from the unfiltered adjustedCopy
+    use = filteredCopy;
+    if isempty(use), use = adjustedCopy; end
+    idx = channelsForMode(currentMode);
+    region = regionInBox(use(:,:,idx), mean(adjustedCopy(:,:,idx), 3), boxPos, false);
+    if isempty(region), return; end
+
+    switch currentMode
+        case 'R'
+            [rHandles, rPositions, rTraceH, rAreas, rMeans, rCounter] = ...
+                drawAddedLabel(region, rHandles, rPositions, rTraceH, rAreas, rMeans, rCounter);
+        case 'G'
+            [gHandles, gPositions, gTraceH, gAreas, gMeans, gCounter] = ...
+                drawAddedLabel(region, gHandles, gPositions, gTraceH, gAreas, gMeans, gCounter);
+        case 'B'
+            [bHandles, bPositions, bTraceH, bAreas, bMeans, bCounter] = ...
+                drawAddedLabel(region, bHandles, bPositions, bTraceH, bAreas, bMeans, bCounter);
+        case 'RG'
+            [rgHandles, rgPositions, rgTraceH, rgAreas, rgMeans, rgCounter] = ...
+                drawAddedLabel(region, rgHandles, rgPositions, rgTraceH, rgAreas, rgMeans, rgCounter);
+        case 'GB'
+            [gbHandles, gbPositions, gbTraceH, gbAreas, gbMeans, gbCounter] = ...
+                drawAddedLabel(region, gbHandles, gbPositions, gbTraceH, gbAreas, gbMeans, gbCounter);
+        case 'RB'
+            [rbHandles, rbPositions, rbTraceH, rbAreas, rbMeans, rbCounter] = ...
+                drawAddedLabel(region, rbHandles, rbPositions, rbTraceH, rbAreas, rbMeans, rbCounter);
+        case 'RGB'
+            [rgbHandles, rgbPositions, rgbTraceH, rgbAreas, rgbMeans, rgbCounter] = ...
+                drawAddedLabel(region, rgbHandles, rgbPositions, rgbTraceH, rgbAreas, rgbMeans, rgbCounter);
+    end
+    updateCountDisplay();
+end
+
+% Draw one Add label (contour + number) and append it to a mode's arrays
+function [H, P, T, A, M, counter] = drawAddedLabel(region, H, P, T, A, M, counter)
+    fs = max(6, str2double(fontSizeBox.String));
+    colors = {'red','green','blue','yellow','cyan','magenta','black','white'};
+    counter = counter + 1;
+
+    % PickableParts none: clicks and box drags that start on a label still
+    % reach the image
+    hold(axCropped, 'on');
+    if isempty(region.boundary)
+        hC = gobjects(1);
+    else
+        hC = plot(axCropped, region.boundary(:,1), region.boundary(:,2), ...
+            'Color', modeToRGB(currentMode), 'LineWidth', traceWidth, 'PickableParts', 'none');
+    end
+    hT = text(axCropped, region.centroid(1), region.centroid(2), num2str(counter), ...
+        'Color', colors{colorMenu.Value}, 'FontSize', fs, 'FontWeight', 'bold', ...
+        'HorizontalAlignment', 'center', 'Clipping', 'on', 'PickableParts', 'none');
+    hold(axCropped, 'off');
+
+    H(end+1) = hT;
+    if size(P, 2) ~= 2, P = reshape(P, [], 2); end
+    P(end+1,:) = region.centroid;
+    T(end+1) = hC;
+    A(end+1) = region.area;
+    M(end+1) = region.meanI;
 end
 
 function toggleChannel(channelIdx)
@@ -1059,6 +1137,49 @@ function undoClick(~,~)
     updateCountDisplay();  % <- Ensure this stays to refresh UI
 end
 
+% Callback for the Rectangle Coordinates boxes: read all four and apply
+function updateRectangle()
+    if ~strcmp(currentShape, 'rectangle'), return; end
+    v = str2double({x1Edit.String, y1Edit.String, x2Edit.String, y2Edit.String});
+    drawRectangleFromCoords(v(1), v(2), v(3), v(4));
+end
+
+% Move the ROI to the given bottom-left (x1,y1) and top-right (x2,y2)
+% corners. Same convention as the X1/Y1/X2/Y2 readouts: pixels of the
+% original image, y counted up from the bottom.
+% Not to be confused with the other rectangle functions that draw the remove box.
+function drawRectangleFromCoords(x1, y1, x2, y2)
+    % Not a number (e.g. empty or text): put the boxes back
+    if any(isnan([x1, y1, x2, y2]))
+        syncBoxesToROI();
+        return;
+    end
+
+    % Order, clamp and convert to [left top width height]
+    % (src/cornersToRectPos.m, shared with greyscale_case.m)
+    pos = cornersToRectPos(x1, y1, x2, y2, imgW, imgH);
+    if isempty(pos)
+        % Entirely outside the image, or no area left after clamping
+        warndlg('The rectangle is outside the image or has zero size.', 'Invalid Rectangle');
+        syncBoxesToROI();
+        return;
+    end
+    roi.Position = pos;
+    rectPos = pos;   % keep it if the shape is switched away and back
+
+    % Setting Position in code doesn't fire ROIMoved, so refresh by hand
+    % (this also writes the clamped values back into the boxes)
+    moveROIAction();
+end
+
+% Show the ROI's current corners in the Rectangle Coordinates boxes
+function syncBoxesToROI()
+    x1Edit.String = coord_boxes(1).String;
+    y1Edit.String = coord_boxes(2).String;
+    x2Edit.String = coord_boxes(3).String;
+    y2Edit.String = coord_boxes(4).String;
+end
+
 function updateImage()
     updateImage_function(axCropped, currentShape, roi, original_rgb, imgW, imgH, ...
         coord_boxes, sliders, val_labels, hCroppedRGB, hR, hG, hB);
@@ -1067,8 +1188,9 @@ function updateImage()
     adjustedCopy = evalin('base', 'adjustedCopy');
     filteredCopy = evalin('base', 'filteredCopy');
     
-    % --- Keep ButtonDownFcn for manual labeling ---
-    set(hCroppedRGB, 'ButtonDownFcn', @labelClick);
+    % Keep the click handler matching the active tool (doesn't interrupt
+    % the ruler: contrast/brightness don't move any pixels)
+    refreshButtonDownFcn();
 
     % Keep the Rectangle Coordinates boxes showing the ROI's real corners
     syncBoxesToROI();
@@ -1101,7 +1223,7 @@ function saveAll()
     saveAll_function(animal_name, currentShape, roi, original_rgb, imgW, imgH, hCroppedRGB, ...
         sliders, rAreaBox, gAreaBox, bAreaBox, maxrAreaBox, maxgAreaBox, maxbAreaBox, ...
         coord_boxes, rPositions, gPositions, bPositions, rgPositions, gbPositions, ...
-        rbPositions, rgbPositions, overlapThreshBox);
+        rbPositions, rgbPositions, overlapThreshBox, conversion_factor);
 end
 
 % Helper function: Create parameters Excel file
@@ -1235,6 +1357,7 @@ function resetAll()
     % Update display and image
     updateCountDisplay();
     updateImage(); % Will automatically handle ROI normalized coordinate updates
+    rulerTool.clear();   % the crop moved back to the default
 
     % Display operation completion prompt (optional)
     disp('All parameters and labels have been reset.');
@@ -1392,8 +1515,21 @@ function autoLabelChannel(channel)
 end
 %>>>END PART D<<<
     
+% Clear button: only the selected mode's labels
 function clearAllLabels()
-    switch currentMode
+    clearModeLabels(currentMode);
+end
+
+% The crop changed (ROI moved or reshaped): every mode's labels point at
+% the old crop, so clear them all, whichever mode is selected
+function clearEveryMode()
+    for modeName = {'R','G','B','RG','GB','RB','RGB'}
+        clearModeLabels(modeName{1});
+    end
+end
+
+function clearModeLabels(mode)
+    switch mode
         case 'R'
             delete(rHandles(isgraphics(rHandles))); rHandles = [];
             delete(rTraceH(isgraphics(rTraceH)));   rTraceH = gobjects(0);
@@ -1428,7 +1564,17 @@ end
 
 % Ruler logic lives in src/ruler.m (shared with greyscale_case.m)
 function startRulerMode()
-    rulerTool.start();
+    rulerTool.start();   % sets the image's click to the ruler
+    % Set the flag AFTER start(): start() clears a ruler that's already
+    % armed, which runs rulerDone and would reset it
+    rulerOn = true;
+end
+
+% Called by the ruler when a measurement finishes or is cleared: give the
+% clicks back to Remove/Add or labelling
+function rulerDone()
+    rulerOn = false;
+    refreshButtonDownFcn();
 end
 
 function clearRuler()
@@ -1440,9 +1586,10 @@ end
         gray_img = rgb2gray(original_rgb);
         gray_img = im2double(gray_img);
 
-        % Close current figure and launch grayscale GUI
+        % Close current figure and launch grayscale GUI (with the
+        % pixels-per-um already given, so it isn't asked again)
         close(fig);
-        greyscale_case(gray_img, animal_name);
+        greyscale_case(gray_img, animal_name, conversion_factor);
     end
 
 

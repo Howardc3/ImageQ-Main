@@ -4,7 +4,9 @@
 function saveAll_function(animal_name, currentShape, roi, original_rgb, imgW, imgH, hCroppedRGB, ...
     sliders, rAreaBox, gAreaBox, bAreaBox, maxrAreaBox, maxgAreaBox, maxbAreaBox, ...
     coord_boxes, rPositions, gPositions, bPositions, rgPositions, gbPositions, ...
-    rbPositions, rgbPositions, overlapThreshBox)
+    rbPositions, rgbPositions, overlapThreshBox, pxPerUm)
+% pxPerUm: image pixels per micrometer (NaN = unknown). When known, the
+% label sheets and ROI_Info also give areas in um^2 (see labelSheetRows).
 
     % Get stored region area data (single channel)
     if isappdata(gcf, 'rAreas')
@@ -84,10 +86,19 @@ function saveAll_function(animal_name, currentShape, roi, original_rgb, imgW, im
     roiInfoCell = {
         'ROI_Type', currentShape;
         'Area_pixels', area_pixels;
+        };
+    % With a scale: the ROI area in um^2 too, and the scale it used
+    if isscalar(pxPerUm) && isfinite(pxPerUm) && pxPerUm > 0
+        roiInfoCell = [roiInfoCell; {
+            'Area_um2', area_pixels / pxPerUm^2;
+            'Pixels_per_um', pxPerUm;
+            }];
+    end
+    roiInfoCell = [roiInfoCell; {
         'Vertex_Count', size(vertices,1);
         ' ', ' ';
         'Vertex_Coordinates', 'X | Y | X_Norm | Y_Norm'; % Header
-        };
+        }];
     
     % Add vertex data (one vertex per row)
     for i = 1:size(vertices,1)
@@ -126,48 +137,9 @@ function saveAll_function(animal_name, currentShape, roi, original_rgb, imgW, im
     imwrite(uint8(gColor * 255), fullfile(folderPath, strcat(animal_name,32,'adjusted_G.tif')));
     imwrite(uint8(bColor * 255), fullfile(folderPath, strcat(animal_name,32,'adjusted_B.tif')));
 
-    % Save original image with ROI overlay (border only)
-    orig = original_rgb;
-
-    % If image is grayscale (1 channel), convert to RGB (3 channels)
-    if size(orig,3) == 1
-        orig = repmat(orig, [1 1 3]);
-    end
-    % Create mask
-    mask = false(imgH, imgW);
-    if strcmp(currentShape, 'rectangle')
-        % Rectangle ROI [x, y, width, height]
-        pos = roi.Position;
-
-        % Edges are converted to integer pixels
-        x1 = max(1, floor(pos(1)));
-        y1 = max(1, floor(pos(2)));
-        x2 = min(imgW, ceil(pos(1) + pos(3)));
-        y2 = min(imgH, ceil(pos(2) + pos(4)));
-
-        % Fill rectangle area
-        if x2 >= x1 && y2 >= y1
-            mask(y1:y2, x1:x2) = true;
-        end
-    else
-        % Polygon ROI
-        v = roi.Position;
-        mask = poly2mask(v(:,1), v(:,2), imgH, imgW);
-    end
-
-    overlay = orig;                          
-    perim = bwperim(mask, 8);
-    
-    % Use image size scaled ROI border in saved ROI image
-    targetFraction = 0.003;  
-    thicknessPx = max(1, round(max(imgH, imgW) * targetFraction));
-    perim = imdilate(perim, ones(thicknessPx));  
-
-    % Paint perimeter red by channel editing
-    overlay(:,:,1) = max(overlay(:,:,1), perim);
-    overlay(:,:,2) = overlay(:,:,2) .* ~perim;
-    overlay(:,:,3) = overlay(:,:,3) .* ~perim;
-
+    % Save original image with ROI overlay (border only); shared with the
+    % grayscale GUI via src/roiOverlay.m
+    overlay = roiOverlay(original_rgb, currentShape, roi.Position);
     imwrite(im2uint8(overlay), fullfile(folderPath, strcat(animal_name, ' original_with_ROI.tif')));
 
     % Get other parameters
@@ -213,110 +185,83 @@ function saveAll_function(animal_name, currentShape, roi, original_rgb, imgW, im
 
     % Save R label positions with explanatory note
     if ~isempty(rPositions)
-        rNote = {'NOTE: Coordinates are relative to the CROPPED image with (0,0) at the TOP-LEFT corner', '', '', '', ''};
-        rHeader = {'Label', 'X', 'Y', 'Area', 'MeanIntensity'};
-        
         % Ensure rAreas and rPositions have consistent length
         if length(rAreas) ~= size(rPositions, 1)
             rAreas = zeros(size(rPositions, 1), 1); % Fill with 0 if inconsistent
         end
-        
+
         if length(rMeans) ~= size(rPositions, 1)
             rMeans = zeros(size(rPositions, 1), 1);
         end
-        
-        rData = num2cell([(1:size(rPositions,1))', rPositions, rAreas(:), rMeans(:)]);
-        rCombined = [rNote; rHeader; rData];
+
+        % Note + header + rows; adds an um^2 column if the scale is known
+        rCombined = labelSheetRows(rPositions, rAreas, rMeans, 'Area', pxPerUm);
         writecell(rCombined, fullfile(folderPath, strcat(animal_name,32,'adjustment_parameters.xlsx')), 'Sheet', 'R_Labels');
     end
 
     % Save G label positions with explanatory note
     if ~isempty(gPositions)
-        gNote = {'NOTE: Coordinates are relative to the CROPPED image with (0,0) at the TOP-LEFT corner', '', '', '', ''};
-        gHeader = {'Label', 'X', 'Y', 'Area', 'MeanIntensity'};
-        
         % Ensure gAreas and gPositions have consistent length
         if length(gAreas) ~= size(gPositions, 1)
             gAreas = zeros(size(gPositions, 1), 1); % Fill with 0 if inconsistent
         end
-        
-        gData = num2cell([(1:size(gPositions,1))', gPositions, gAreas(:), gMeans(:)]);
-        gCombined = [gNote; gHeader; gData];
+
+        gCombined = labelSheetRows(gPositions, gAreas, gMeans, 'Area', pxPerUm);
         writecell(gCombined, fullfile(folderPath, strcat(animal_name,32,'adjustment_parameters.xlsx')), 'Sheet', 'G_Labels');
     end
 
     % Save B label positions with explanatory note
     if ~isempty(bPositions)
-        bNote = {'NOTE: Coordinates are relative to the CROPPED image with (0,0) at the TOP-LEFT corner', '', '', '', ''};
-        bHeader = {'Label', 'X', 'Y', 'Area', 'MeanIntensity'};
-        
         % Ensure bAreas and bPositions have consistent length
         if length(bAreas) ~= size(bPositions, 1)
             bAreas = zeros(size(bPositions, 1), 1); % Fill with 0 if inconsistent
         end
-        
-        bData = num2cell([(1:size(bPositions,1))', bPositions, bAreas(:), bMeans(:)]);
-        bCombined = [bNote; bHeader; bData];
+
+        bCombined = labelSheetRows(bPositions, bAreas, bMeans, 'Area', pxPerUm);
         writecell(bCombined, fullfile(folderPath, strcat(animal_name,32,'adjustment_parameters.xlsx')), 'Sheet', 'B_Labels');
     end
 
     % Save RG overlap label positions with explanatory note
     if ~isempty(rgPositions)
-        rgNote = {'NOTE: Coordinates are relative to the CROPPED image with (0,0) at the TOP-LEFT corner', '', '', '', ''};
-        rgHeader = {'Label', 'X', 'Y', 'Overlap Area', 'MeanIntensity'};
-        
         % Ensure rgOverlapAreas and rgPositions have consistent length
         if length(rgOverlapAreas) ~= size(rgPositions, 1)
             rgOverlapAreas = zeros(size(rgPositions, 1), 1); % Fill with 0 if inconsistent
         end
-        
-        rgData = num2cell([(1:size(rgPositions,1))', rgPositions, rgOverlapAreas(:), rgMeans(:)]);
-        rgCombined = [rgNote; rgHeader; rgData];
+
+        rgCombined = labelSheetRows(rgPositions, rgOverlapAreas, rgMeans, 'Overlap Area', pxPerUm);
         writecell(rgCombined, fullfile(folderPath, strcat(animal_name,32,'adjustment_parameters.xlsx')), 'Sheet', 'RG_Labels');
     end
 
     % Save GB overlap label positions with explanatory note
     if ~isempty(gbPositions)
-        gbNote = {'NOTE: Coordinates are relative to the CROPPED image with (0,0) at the TOP-LEFT corner', '', '', '', ''};
-        gbHeader = {'Label', 'X', 'Y', 'Overlap Area', 'MeanIntensity'};
-        
         % Ensure gbOverlapAreas and gbPositions have consistent length
         if length(gbOverlapAreas) ~= size(gbPositions, 1)
             gbOverlapAreas = zeros(size(gbPositions, 1), 1); % Fill with 0 if inconsistent
         end
-        
-        gbData = num2cell([(1:size(gbPositions,1))', gbPositions, gbOverlapAreas(:), gbMeans(:)]);
-        gbCombined = [gbNote; gbHeader; gbData];
+
+        gbCombined = labelSheetRows(gbPositions, gbOverlapAreas, gbMeans, 'Overlap Area', pxPerUm);
         writecell(gbCombined, fullfile(folderPath, strcat(animal_name,32,'adjustment_parameters.xlsx')), 'Sheet', 'GB_Labels');
     end
 
     % Save RB overlap label positions with explanatory note
     if ~isempty(rbPositions)
-        rbNote = {'NOTE: Coordinates are relative to the CROPPED image with (0,0) at the TOP-LEFT corner', '', '', '', ''};
-        rbHeader = {'Label', 'X', 'Y', 'Overlap Area', 'MeanIntensity'};
-        
         % Ensure rbOverlapAreas and rbPositions have consistent length
         if length(rbOverlapAreas) ~= size(rbPositions, 1)
             rbOverlapAreas = zeros(size(rbPositions, 1), 1); % Fill with 0 if inconsistent
         end
-        
-        rbData = num2cell([(1:size(rbPositions,1))', rbPositions, rbOverlapAreas(:), rbMeans(:)]);
-        rbCombined = [rbNote; rbHeader; rbData];
+
+        rbCombined = labelSheetRows(rbPositions, rbOverlapAreas, rbMeans, 'Overlap Area', pxPerUm);
         writecell(rbCombined, excelFile, 'Sheet', 'RB_Labels');
     end
 
     % Save RGB overlap label positions with explanatory note
     if ~isempty(rgbPositions)
-        rgbNote = {'NOTE: Coordinates are relative to the CROPPED image with (0,0) at the TOP-LEFT corner', '', '', '', ''};
-        rgbHeader = {'Label', 'X', 'Y', 'Overlap Area', 'MeanIntensity'};
-        
         % Ensure rgbOverlapAreas and rgbPositions have consistent length
         if length(rgbOverlapAreas) ~= size(rgbPositions, 1)
             rgbOverlapAreas = zeros(size(rgbPositions, 1), 1); % Fill with 0 if inconsistent
         end
-        
-        rgbData = num2cell([(1:size(rgbPositions,1))', rgbPositions, rgbOverlapAreas(:), rgbMeans(:)]);
-        rgbCombined = [rgbNote; rgbHeader; rgbData];
+
+        rgbCombined = labelSheetRows(rgbPositions, rgbOverlapAreas, rgbMeans, 'Overlap Area', pxPerUm);
         writecell(rgbCombined, fullfile(folderPath, strcat(animal_name,32,'adjustment_parameters.xlsx')), 'Sheet', 'RGB_Labels');
     end
 
